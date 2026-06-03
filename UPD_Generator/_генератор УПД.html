@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Генератор УПД/СЧФДОП для Честного Знака</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; max-width: 1000px; margin: 0 auto; background-color: #f4f4f9; }
+        .container { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; margin-top: 0; }
+        .section { margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid #eee; }
+        h3 { color: #555; margin-top: 0; font-size: 16px; text-transform: uppercase; letter-spacing: 1px; }
+        .file-group { display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; background: #f9f9f9; padding: 15px; border-radius: 5px; border: 1px solid #e0e0e0; }
+        .file-input-wrapper { flex: 1; min-width: 200px; }
+        label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px; color: #444; }
+        input[type="file"], input[type="text"], input[type="date"] { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        .btn-row { margin-top: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        button { padding: 12px 24px; border: none; border-radius: 5px; cursor: pointer; font-size: 15px; font-weight: bold; transition: background 0.2s; }
+        .btn-gen { background: #007bff; color: white; }
+        .btn-gen:hover { background: #0056b3; }
+        .btn-dl { background: #28a745; color: white; }
+        .btn-dl:hover { background: #218838; }
+        .btn-csv { background: #ffc107; color: #000; }
+        .btn-csv:hover { background: #e0a800; }
+        .checkbox-wrapper { display: flex; align-items: center; gap: 8px; margin-left: 20px; padding: 8px 12px; background: #f8f9fa; border-radius: 5px; border: 1px solid #dee2e6; }
+        .checkbox-wrapper input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+        .checkbox-wrapper label { margin: 0; cursor: pointer; font-weight: 600; color: #495057; }
+        textarea { width: 100%; height: 400px; font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; background: #2d2d2d; color: #f8f8f2; }
+        .status { margin-top: 10px; font-weight: bold; white-space: pre-wrap; }
+        .status.error { color: #dc3545; }
+        .status.success { color: #28a745; }
+        .status.warning { color: #ffc107; }
+        .info-box { font-size: 12px; color: #666; background: #eef; padding: 10px; border-radius: 4px; margin-bottom: 10px; }
+        code { background: #eee; padding: 2px 4px; border-radius: 3px; color: #c7254e; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Генератор УПД/СЧФДОП для Честного Знака</h1>
+    
+    <div class="info-box">
+        <b>Требования к файлам Excel:</b><br><br>
+        <b>1. Реквизиты (3 столбца: Field, Seller, Buyer):</b><br>
+        <code>Name, Inn, Kpp, Index, RegionCode, RegionName, City, Street, House, Kvart, Sign_FioLast, Sign_FioFirst, Sign_FioMiddle, Sign_Pos, ParticipantID</code><br>
+        <small>ParticipantID: GUID из ЭДО</small><br><br>
+        <b>2. Товары (столбцы):</b><br>
+        <code>GTIN, Наименование, ОКЕИ_Тов, НаимЕдИзм, Кол-во, Цена, СтТовБезНДС, НалСт, СтТовУчНал, СумНал, КодПроисх, НомерДТ, КрНаимСтрПр</code><br><br>
+        <b>3. Маркировка (КИЗ):</b><br>
+        <code>Формат: Excel с колонкой "КИЗ" ИЛИ текстовый файл (один код в строке)</code><br>
+        <small>GTIN извлекается автоматически из КИЗ (после "01" идут 14 цифр GTIN)</small>
+    </div>
+
+    <div class="section">
+        <h3>1. Параметры документа</h3>
+        <div style="display: flex; gap: 20px;">
+            <div style="flex:1"><label>Номер документа</label><input type="text" id="docNum" value="22"></div>
+            <div style="flex:1"><label>Дата документа</label><input type="date" id="docDate"></div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>2. Загрузка данных</h3>
+        <div class="file-group">
+            <div class="file-input-wrapper"><label>📄 Реквизиты</label><input type="file" id="fileRequisites" accept=".xlsx, .xls"></div>
+            <div class="file-input-wrapper"><label>📦 Товары</label><input type="file" id="fileProducts" accept=".xlsx, .xls"></div>
+            <div class="file-input-wrapper"><label>🏷️ КИЗ (Excel или .txt)</label><input type="file" id="fileMarks" accept=".xlsx, .xls, .txt"></div>
+        </div>
+        <div id="status" class="status"></div>
+    </div>
+
+    <div class="btn-row">
+        <button class="btn-gen" onclick="generateXML()">Сформировать XML</button>
+        <button class="btn-dl" onclick="downloadXML()">Скачать XML</button>
+        <button class="btn-csv" onclick="exportCSV()">📄 ЭКСПОРТ CSV</button>
+        <div class="checkbox-wrapper">
+            <input type="checkbox" id="csvLineByLine"><label for="csvLineByLine">построчно</label>
+        </div>
+    </div>
+
+    <div class="section" style="margin-top: 20px;">
+        <h3>Результат</h3>
+        <textarea id="xmlOutput" readonly></textarea>
+    </div>
+</div>
+
+<script>
+document.getElementById('docDate').valueAsDate = new Date();
+let generatedXMLContent = "";
+let currentProductsData = [];
+let currentMarksData = [];
+let currentIdFile = "";
+
+function cleanStr(str) {
+    if (!str) return "";
+    return String(str).replace(/[\r\n\t]/g, " ").trim();
+}
+
+function escapeXml(unsafe) {
+    if (!unsafe) return "";
+    return cleanStr(unsafe).replace(/[<>&'"]/g, function (c) {
+        switch (c) {
+            case '<': return '&lt;';
+            case '>': return '&gt;';
+            case '&': return '&amp;';
+            case '\'': return '&apos;';
+            case '"': return '&quot;';
+        }
+    });
+}
+
+function escapeCSV(field) {
+    if (field === null || field === undefined) return "";
+    const str = String(field);
+    if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+}
+
+function fmtMoney(val) {
+    const num = parseFloat(String(val).replace(',', '.')) || 0;
+    return num.toFixed(2);
+}
+
+function encodeWindows1251(str) {
+    const bytes = [];
+    for (let char of str) {
+        const code = char.charCodeAt(0);
+        if (code < 128) {
+            bytes.push(code);
+        } else if (code === 0x0401) bytes.push(0xA8);
+        else if (code === 0x0451) bytes.push(0xB8);
+        else if (code >= 0x0410 && code <= 0x042F) bytes.push(code - 0x0350);
+        else if (code >= 0x0430 && code <= 0x044F) bytes.push(code - 0x0350);
+        else if (code === 0x2116) bytes.push(0xB9);
+        else {
+            console.warn(`Symbol not in WIN1251: ${char} (U+${code.toString(16)})`);
+            bytes.push(0x3F);
+        }
+    }
+    return new Uint8Array(bytes);
+}
+
+function readExcel(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, {type: 'array'});
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            const json = XLSX.utils.sheet_to_json(worksheet, {defval: ""});
+            resolve(json);
+        };
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+function readTextFile(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const text = e.target.result;
+            const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+            resolve(lines);
+        };
+        reader.onerror = reject;
+        reader.readAsText(file, 'utf-8');
+    });
+}
+
+// Извлечение GTIN из КИЗ
+// Формат DataMatrix: (01)GTIN(21)Serial или 01GTIN21Serial
+function extractGTINFromKIZ(kiz) {
+    if (!kiz) return null;
+    
+    // Очищаем КИЗ от спецсимволов форматирования
+    const cleanKiz = String(kiz).replace(/[\r\n\t]/g, '').trim();
+    
+    // Паттерн 1: 01 + 14 цифр GTIN + 21
+    const match1 = cleanKiz.match(/01(\d{14})21/);
+    if (match1) return match1[1];
+    
+    // Паттерн 2: (01) + 14 цифр GTIN + (21)
+    const match2 = cleanKiz.match(/\(01\)(\d{14})\(21\)/);
+    if (match2) return match2[1];
+    
+    // Паттерн 3: GTIN в начале строки (14 цифр)
+    const match3 = cleanKiz.match(/^(\d{14})/);
+    if (match3) return match3[1];
+    
+    return null;
+}
+
+// Загрузка файла маркировки (Excel или TXT)
+async function loadMarksFile(file) {
+    const fileName = file.name.toLowerCase();
+    
+    if (fileName.endsWith('.txt')) {
+        // Текстовый файл - один КИЗ в строке
+        const lines = await readTextFile(file);
+        const marks = [];
+        
+        lines.forEach((line, index) => {
+            const kiz = line.trim();
+            if (!kiz) return;
+            
+            // Пропускаем первую строку если это заголовок "КИЗ"
+            if (index === 0 && (kiz.toUpperCase() === 'КИЗ' || kiz.toUpperCase() === 'KIZ')) {
+                return;
+            }
+            
+            const gtin = extractGTINFromKIZ(kiz);
+            if (gtin) {
+                marks.push({ GTIN: gtin, КИЗ: kiz });
+            } else {
+                console.warn(`Не удалось извлечь GTIN из КИЗ: ${kiz}`);
+            }
+        });
+        
+        return marks;
+    } else {
+        // Excel файл
+        const data = await readExcel(file);
+        const marks = [];
+        
+        data.forEach(row => {
+            // Поддерживаем разные названия колонок
+            const kiz = row['КИЗ'] || row['Киз'] || row['киз'] || row['KIZ'] || row['kiz'] || '';
+            if (!kiz) return;
+            
+            // GTIN можно указать явно или извлечь из КИЗ
+            let gtin = row['GTIN'] || row['gtin'] || row['ГТИН'] || '';
+            if (!gtin) {
+                gtin = extractGTINFromKIZ(kiz);
+            }
+            
+            if (gtin) {
+                marks.push({ GTIN: String(gtin).trim(), КИЗ: String(kiz).trim() });
+            }
+        });
+        
+        return marks;
+    }
+}
+
+function parseRequisites(data) {
+    const rec = { Seller: {}, Buyer: {} };
+    if (!data || data.length === 0) return rec;
+    data.forEach(row => {
+        const field = row['Field'];
+        if (!field) return;
+        if (row['Seller']) rec.Seller[field] = row['Seller'];
+        if (row['Buyer']) rec.Buyer[field] = row['Buyer'];
+    });
+    return rec;
+}
+
+async function generateXML() {
+    const statusDiv = document.getElementById('status');
+    statusDiv.innerHTML = "Обработка...";
+    statusDiv.className = "status";
+
+    const fRec = document.getElementById('fileRequisites').files[0];
+    const fProd = document.getElementById('fileProducts').files[0];
+    const fMark = document.getElementById('fileMarks').files[0];
+
+    if (!fRec || !fProd || !fMark) {
+        statusDiv.innerHTML = "❌ Ошибка: Загрузите все 3 файла!";
+        statusDiv.className = "status error";
+        return;
+    }
+
+    try {
+        const recRaw = await readExcel(fRec);
+        const prodData = await readExcel(fProd);
+        const markData = await loadMarksFile(fMark);
+
+        currentProductsData = prodData;
+        currentMarksData = markData;
+
+        const rec = parseRequisites(recRaw);
+        
+        // Валидация реквизитов
+        const requiredSellerFields = ['Name', 'Inn', 'Kpp', 'Index', 'RegionCode', 'RegionName', 'City', 'Street', 'House', 'ParticipantID', 'Sign_FioLast', 'Sign_FioFirst', 'Sign_FioMiddle', 'Sign_Pos'];
+        const requiredBuyerFields = ['Name', 'Inn', 'Kpp', 'Index', 'RegionCode', 'RegionName', 'City', 'Street', 'House', 'ParticipantID'];
+        
+        const missingSeller = requiredSellerFields.filter(f => !rec.Seller[f]);
+        const missingBuyer = requiredBuyerFields.filter(f => !rec.Buyer[f]);
+        
+        if (missingSeller.length > 0 || missingBuyer.length > 0) {
+            let errorMsg = "❌ Ошибка в реквизитах. Отсутствуют поля:\n";
+            if (missingSeller.length > 0) errorMsg += `  Продавец: ${missingSeller.join(', ')}\n`;
+            if (missingBuyer.length > 0) errorMsg += `  Покупатель: ${missingBuyer.join(', ')}\n`;
+            statusDiv.innerHTML = errorMsg;
+            statusDiv.className = "status error";
+            return;
+        }
+
+        // Валидация товаров
+        const requiredProductFields = ['GTIN', 'Наименование', 'Кол-во', 'Цена', 'СтТовБезНДС', 'НалСт', 'СтТовУчНал', 'СумНал'];
+        const missingProductFields = [];
+        if (prodData.length > 0) {
+            const firstProd = prodData[0];
+            requiredProductFields.forEach(f => {
+                if (!(f in firstProd)) {
+                    missingProductFields.push(f);
+                }
+            });
+        }
+        
+        if (missingProductFields.length > 0) {
+            statusDiv.innerHTML = `❌ Ошибка в файле товаров. Отсутствуют колонки: ${missingProductFields.join(', ')}`;
+            statusDiv.className = "status error";
+            return;
+        }
+
+        // Проверка соответствия GTIN
+        const productGtins = new Set(prodData.map(p => String(p['GTIN'] || '').trim()).filter(g => g));
+        const markGtins = new Set(markData.map(m => String(m['GTIN'] || '').trim()).filter(g => g));
+        
+        const gtinsInMarksNotInProducts = [...markGtins].filter(g => !productGtins.has(g));
+        const gtinsInProductsNotInMarks = [...productGtins].filter(g => !markGtins.has(g));
+        
+        let warningMsg = "";
+        if (gtinsInMarksNotInProducts.length > 0) {
+            warningMsg += `⚠️ В маркировке есть GTIN, которых нет в товарах: ${gtinsInMarksNotInProducts.slice(0, 5).join(', ')}${gtinsInMarksNotInProducts.length > 5 ? '...' : ''}\n`;
+        }
+        if (gtinsInProductsNotInMarks.length > 0) {
+            warningMsg += `⚠️ В товарах есть GTIN без маркировки: ${gtinsInProductsNotInMarks.slice(0, 5).join(', ')}${gtinsInProductsNotInMarks.length > 5 ? '...' : ''}\n`;
+        }
+        
+        warningMsg += `✅ Загружено КИЗ: ${markData.length}\n`;
+
+        buildXML(rec, prodData, markData);
+        
+        if (warningMsg) {
+            statusDiv.innerHTML = "✅ XML сформирован (Windows-1251).\n\n" + warningMsg;
+            statusDiv.className = "status warning";
+        } else {
+            statusDiv.innerHTML = "✅ XML сформирован (Windows-1251).";
+            statusDiv.className = "status success";
+        }
+    } catch (e) {
+        console.error(e);
+        statusDiv.innerHTML = `❌ Ошибка: ${e.message}`;
+        statusDiv.className = "status error";
+    }
+}
+
+function buildXML(rec, products, marks) {
+    const marksMap = {};
+    marks.forEach(m => {
+        let gtin = String(m['GTIN'] || '').trim();
+        let kiz = String(m['КИЗ'] || '').trim();
+        if (!gtin || !kiz) return;
+        if (!marksMap[gtin]) marksMap[gtin] = [];
+        marksMap[gtin].push(kiz);
+    });
+
+    const docNum = document.getElementById('docNum').value;
+    const docDateRaw = document.getElementById('docDate').value;
+    
+    const now = new Date();
+    const docDate = docDateRaw.split('-').reverse().join('.');
+    const timeStr = [
+        String(now.getHours()).padStart(2, '0'),
+        String(now.getMinutes()).padStart(2, '0'),
+        String(now.getSeconds()).padStart(2, '0')
+    ].join('.');
+    const dateShort = docDateRaw.replace(/-/g, '');
+    const fileGuid = crypto.randomUUID();
+    
+    const s = rec.Seller;
+    const b = rec.Buyer;
+    
+    const receiverId = b.ParticipantID;
+    const senderId = s.ParticipantID;
+    
+    const hasMarking = marks.length > 0 ? "1" : "0";
+    const n2 = "0"; const n3 = hasMarking; const n4 = "0";
+    const n5 = "0"; const n6 = "0"; const n7 = "00";
+    
+    currentIdFile = `ON_NSCHFDOPPR_${receiverId}_${senderId}_${dateShort}_${fileGuid}_${n2}_${n3}_${n4}_${n5}_${n6}_${n7}`;
+
+    let xml = `<?xml version="1.0" encoding="windows-1251"?>\n`;
+    xml += `<Файл ИдФайл="${currentIdFile}" ВерсФорм="5.03" ВерсПрог="EDOLite 1.0">\n`;
+    xml += `    <Документ КНД="1115131" Функция="СЧФДОП" ПоФактХЖ="Документ об отгрузке товаров (выполнении работ), передаче имущественных прав (документ об оказании услуг)" НаимДокОпр="Счет-фактура и документ об отгрузке товаров (выполнении работ), передаче имущественных прав (документ об оказании услуг)" ДатаИнфПр="${docDate}" ВремИнфПр="${timeStr}" НаимЭконСубСост="${escapeXml(s.Name)}, ИНН: ${s.Inn}">\n`;
+    
+    xml += `        <СвСчФакт НомерДок="${docNum}" ДатаДок="${docDate}">\n`;
+    
+    xml += `            <СвПрод>\n`;
+    xml += `                <ИдСв><СвЮЛУч НаимОрг="${escapeXml(s.Name)}" ИННЮЛ="${s.Inn}" КПП="${s.Kpp}"/></ИдСв>\n`;
+    xml += `                <Адрес><АдрРФ Индекс="${s.Index}" КодРегион="${s.RegionCode}" НаимРегион="${escapeXml(s.RegionName)}" Район="${escapeXml(s.City)}" Город="${escapeXml(s.City)}" Улица="${escapeXml(s.Street)}" Дом="${escapeXml(s.House)}"${s.Kvart ? ` Кварт="${escapeXml(s.Kvart)}"` : ""}/></Адрес>\n`;
+    xml += `            </СвПрод>\n`;
+
+    xml += `            <ГрузОт><ГрузОтпр>\n`;
+    xml += `                <ИдСв><СвЮЛУч НаимОрг="${escapeXml(s.Name)}" ИННЮЛ="${s.Inn}" КПП="${s.Kpp}"/></ИдСв>\n`;
+    xml += `                <Адрес><АдрРФ Индекс="${s.Index}" КодРегион="${s.RegionCode}" НаимРегион="${escapeXml(s.RegionName)}" Район="${escapeXml(s.City)}" Город="${escapeXml(s.City)}" Улица="${escapeXml(s.Street)}" Дом="${escapeXml(s.House)}"${s.Kvart ? ` Кварт="${escapeXml(s.Kvart)}"` : ""}/></Адрес>\n`;
+    xml += `            </ГрузОтпр></ГрузОт>\n`;
+
+    xml += `            <ГрузПолуч>\n`;
+    xml += `                <ИдСв><СвЮЛУч НаимОрг="${escapeXml(b.Name)}" ИННЮЛ="${b.Inn}" КПП="${b.Kpp}"/></ИдСв>\n`;
+    xml += `                <Адрес><АдрРФ Индекс="${b.Index}" КодРегион="${b.RegionCode}" НаимРегион="${escapeXml(b.RegionName)}" Район="${escapeXml(b.City)}" Город="${escapeXml(b.City)}" Улица="${escapeXml(b.Street)}" Дом="${escapeXml(b.House)}"${b.Kvart ? ` Кварт="${escapeXml(b.Kvart)}"` : ""}/></Адрес>\n`;
+    xml += `            </ГрузПолуч>\n`;
+
+    xml += `            <ДокПодтвОтгрНом РеквНаимДок="Счет-фактура и документ об отгрузке товаров (выполнении работ), передаче имущественных прав (документ об оказании услуг)" РеквНомерДок="${docNum}" РеквДатаДок="${docDate}"/>\n`;
+
+    xml += `            <СвПокуп>\n`;
+    xml += `                <ИдСв><СвЮЛУч НаимОрг="${escapeXml(b.Name)}" ИННЮЛ="${b.Inn}" КПП="${b.Kpp}"/></ИдСв>\n`;
+    xml += `                <Адрес><АдрРФ Индекс="${b.Index}" КодРегион="${b.RegionCode}" НаимРегион="${escapeXml(b.RegionName)}" Район="${escapeXml(b.City)}" Город="${escapeXml(b.City)}" Улица="${escapeXml(b.Street)}" Дом="${escapeXml(b.House)}"${b.Kvart ? ` Кварт="${escapeXml(b.Kvart)}"` : ""}/></Адрес>\n`;
+    xml += `            </СвПокуп>\n`;
+    
+    xml += `            <ДенИзм КодОКВ="643" НаимОКВ="Российский рубль"/>\n`;
+    xml += `        </СвСчФакт>\n`;
+
+    xml += `        <ТаблСчФакт>\n`;
+    let totalNoVat = 0, totalVat = 0, totalWithVat = 0;
+
+    products.forEach((prod, index) => {
+        const gtin = String(prod['GTIN'] || '').trim();
+        const name = String(prod['Наименование'] || '').trim();
+        const okei = prod['ОКЕИ_Тов'] || "796";
+        const unit = prod['НаимЕдИзм'] || "шт";
+        const qty = prod['Кол-во'] || 0;
+        const price = prod['Цена'] || 0;
+        const sumNoVat = prod['СтТовБезНДС'] || 0;
+        const vatRate = prod['НалСт'] || "20%";
+        const sumWithVat = prod['СтТовУчНал'] || 0;
+        const sumVat = prod['СумНал'] || 0;
+        
+        const dtCode = prod['КодПроисх'] || "";
+        const dtNum = prod['НомерДТ'] || "";
+        const countryName = prod['КрНаимСтрПр'] || "";
+
+        const parseNum = (val) => parseFloat(String(val).replace(',', '.')) || 0;
+        totalNoVat += parseNum(sumNoVat);
+        totalVat += parseNum(sumVat);
+        totalWithVat += parseNum(sumWithVat);
+
+        xml += `            <СведТов НомСтр="${index + 1}" НаимТов="${escapeXml(name)}" ОКЕИ_Тов="${okei}" НаимЕдИзм="${unit}" КолТов="${qty}" ЦенаТов="${fmtMoney(price)}" СтТовБезНДС="${fmtMoney(sumNoVat)}" НалСт="${vatRate}" СтТовУчНал="${fmtMoney(sumWithVat)}">\n`;
+        
+        if (dtCode || dtNum) {
+            xml += `                <СвДТ КодПроисх="${dtCode}" НомерДТ="${dtNum}"/>\n`;
+        }
+        
+        const hasKiz = marksMap[gtin] && marksMap[gtin].length > 0;
+        if (hasKiz || countryName) {
+            xml += `                <ДопСведТов>\n`;
+            if (countryName) {
+                xml += `                    <КрНаимСтрПр>${escapeXml(countryName)}</КрНаимСтрПр>\n`;
+            }
+            if (hasKiz) {
+                marksMap[gtin].forEach(kiz => {
+                    xml += `                    <НомСредИдентТов><КИЗ>${escapeXml(kiz)}</КИЗ></НомСредИдентТов>\n`;
+                });
+            }
+            xml += `                </ДопСведТов>\n`;
+        }
+
+        xml += `                <Акциз><БезАкциз>без акциза</БезАкциз></Акциз>\n`;
+        xml += `                <СумНал><СумНал>${fmtMoney(sumVat)}</СумНал></СумНал>\n`;
+        xml += `            </СведТов>\n`;
+    });
+
+    xml += `            <ВсегоОпл СтТовБезНДСВсего="${fmtMoney(totalNoVat)}" СтТовУчНалВсего="${fmtMoney(totalWithVat)}">\n`;
+    xml += `                <СумНалВсего><СумНал>${fmtMoney(totalVat)}</СумНал></СумНалВсего>\n`;
+    xml += `            </ВсегоОпл>\n`;
+    xml += `        </ТаблСчФакт>\n`;
+
+    xml += `        <СвПродПер>\n`;
+    xml += `            <СвПер СодОпер="Товары переданы" ДатаПер="${docDate}">\n`;
+    xml += `                <БезДокОснПер>1</БезДокОснПер>\n`;
+    xml += `                <СвЛицПер>\n`;
+    xml += `                    <РабОргПрод Должность="${escapeXml(s.Sign_Pos)}">\n`;
+    xml += `                        <ФИО Фамилия="${escapeXml(s.Sign_FioLast)}" Имя="${escapeXml(s.Sign_FioFirst)}" Отчество="${escapeXml(s.Sign_FioMiddle)}"/>\n`;
+    xml += `                    </РабОргПрод>\n`;
+    xml += `                </СвЛицПер>\n`;
+    xml += `            </СвПер>\n`;
+    xml += `        </СвПродПер>\n`;
+
+    xml += `        <Подписант Должн="${escapeXml(s.Sign_Pos)}" СпосПодтПолном="1">\n`;
+    xml += `            <ФИО Фамилия="${escapeXml(s.Sign_FioLast)}" Имя="${escapeXml(s.Sign_FioFirst)}" Отчество="${escapeXml(s.Sign_FioMiddle)}"/>\n`;
+    xml += `        </Подписант>\n`;
+
+    xml += `    </Документ>\n`;
+    xml += `</Файл>`;
+
+    generatedXMLContent = xml;
+    document.getElementById('xmlOutput').value = xml;
+}
+
+function exportCSV() {
+    if (currentProductsData.length === 0) {
+        alert("Сначала загрузите файлы и сформируйте XML!");
+        return;
+    }
+
+    const isLineByLine = document.getElementById('csvLineByLine').checked;
+    const marksMap = {};
+    currentMarksData.forEach(m => {
+        let gtin = String(m['GTIN'] || '').trim();
+        let kiz = String(m['КИЗ'] || '').trim();
+        if (!gtin || !kiz) return;
+        if (!marksMap[gtin]) marksMap[gtin] = [];
+        marksMap[gtin].push(kiz);
+    });
+
+    let csv = "";
+    let rowNum = 1;
+    
+    currentProductsData.forEach((prod) => {
+        const gtin = String(prod['GTIN'] || '').trim();
+        const name = prod['Наименование'] || '';
+        const price = prod['Цена'] || 0;
+        const qty = prod['Кол-во'] || 0;
+        const okei = prod['ОКЕИ_Тов'] || "796";
+        const vatRate = prod['НалСт'] || "22%";
+        const kizList = marksMap[gtin] || [];
+        
+        if (isLineByLine) {
+            if (kizList.length === 0) {
+                csv += `${rowNum},${escapeCSV(name)},${price},${qty},${okei},${vatRate},КИЗ,\n`;
+                rowNum++;
+            } else {
+                kizList.forEach(kiz => {
+                    csv += `${rowNum},${escapeCSV(name)},${price},${qty},${okei},${vatRate},КИЗ,${escapeCSV(kiz)}\n`;
+                    rowNum++;
+                });
+            }
+        } else {
+            let kizString = kizList.length > 0 ? kizList.map(k => escapeCSV(k)).join(',') : "";
+            csv += `${rowNum},${escapeCSV(name)},${price},${qty},${okei},${vatRate},КИЗ,${kizString}\n`;
+            rowNum++;
+        }
+    });
+
+    const encoder = new TextEncoder();
+    const encoded = encoder.encode('\uFEFF' + csv);
+    const blob = new Blob([encoded], {type: "text/csv;charset=UTF-8"});
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "export.csv";
+    link.click();
+}
+
+function downloadXML() {
+    if (!generatedXMLContent) {
+        alert("Сначала сформируйте XML!");
+        return;
+    }
+    const encoded = encodeWindows1251(generatedXMLContent);
+    const blob = new Blob([encoded], {type: "text/xml;charset=windows-1251"});
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = currentIdFile + ".xml";
+    link.click();
+}
+</script>
+</body>
+</html>
